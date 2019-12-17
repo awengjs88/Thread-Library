@@ -27,19 +27,11 @@ vector<ucontext_t *> waitQueue;
 vector<int> currentLocks, lockedQueueId, waitQueueLock, waitQueueCond;
 ucontext_t initial, schedulerContext, releaseMem;
 ucontext_t tempLock;
-//ucontext_t temp;
 ucontext_t *current;
 ucontext_t *next;
 bool lib_init_called = false;
 
-/*void memoryRelease() {
-	ucontext_t currentContext;
-	getcontext(&currentContext);
-	cout << "De-allocate memory: " << &currentContext << endl;
-	delete [] (char*)currentContext.uc_stack.ss_sp;
-	setcontext(&schedulerContext);
-}*/
-
+//check if a thread owns a specific lock
 bool isLockOwner (ucontext_t * thread) {
 	for (int j = 0; j < lockedQueueContext.size(); j++) {
 		if (thread == lockedQueueContext[j]) {
@@ -49,6 +41,7 @@ bool isLockOwner (ucontext_t * thread) {
 	return false;
 }
 
+//check queue
 int searchWaitQueue (unsigned int lock, unsigned int cond) {
 	for (int a = 0; a < waitQueueLock.size(); a++) {
 		if (waitQueueLock[a] == lock) {
@@ -62,15 +55,15 @@ int searchWaitQueue (unsigned int lock, unsigned int cond) {
 	return -1;
 }
 
+//delete from queue
 void deleteWaitQueue (int index) {
-	//cout << "Index in waitQueue " << index << endl;
 	readyQueue.push_back(waitQueue[index]);
-	//cout << "Added to readyQueue: " << waitQueue[index] << endl;
 	waitQueue.erase(waitQueue.begin()+index);
 	waitQueueLock.erase(waitQueueLock.begin()+index);
 	waitQueueCond.erase(waitQueueCond.begin()+index);
 }
 
+//check if lock is being used by a thread
 bool isLockUsed (unsigned int lock) {
 	for (int j = 0; j < currentLocks.size(); j++) {
 		if (currentLocks[j] == lock) {
@@ -80,20 +73,19 @@ bool isLockUsed (unsigned int lock) {
 	return false;
 }
 
+//if all threads are serviced, close thread library
 void threadScheduler() {
 	while (readyQueue.size() != 0) {
 		current = readyQueue.front();
-		//cout << "Front of queue: " << readyQueue.front() << endl;
 		readyQueue.erase(readyQueue.begin());
 		swapcontext(&schedulerContext, current);
-		//cout << "scheduler" << endl;
-		//cout << "size of ready queue1: " << readyQueue.size() << endl;
 	}
 	cout << "Thread library exiting." << endl;
 }
 
+//initialize thread library
 int thread_libinit(thread_startfunc_t func, void *arg){
-	//cout << "thread_libinit" << endl;
+
 	if (lib_init_called == true) {
 		return -1;
 	}
@@ -102,7 +94,6 @@ int thread_libinit(thread_startfunc_t func, void *arg){
 		ucontext_t ucontext_ptr;
 		getcontext(&ucontext_ptr);           // ucontext_ptr has type (ucontext_t *)
 		getcontext(&initial);
-		//getcontext(&releaseMem);
 		getcontext(&schedulerContext);
 
 		char *stack = new char [STACK_SIZE];
@@ -116,25 +107,18 @@ int thread_libinit(thread_startfunc_t func, void *arg){
 		schedulerContext.uc_stack.ss_flags = 0;
 		schedulerContext.uc_link = &schedulerContext;
 	
-		/*releaseMem.uc_stack.ss_sp = stack;
-		releaseMem.uc_stack.ss_size = STACK_SIZE;
-		releaseMem.uc_stack.ss_flags = 0;
-		releaseMem.uc_link = NULL;
-
-		makecontext(&releaseMem, memoryRelease, 1, arg);*/
 	
 		makecontext(&schedulerContext, threadScheduler, 1, arg);
 	
 		makecontext(&ucontext_ptr, (void (*)()) func, 1, arg);
 		readyQueue.push_back(&ucontext_ptr);
-		//cout << "Parent thread: " << &ucontext_ptr << endl;
 		threadScheduler();
 	}
 	return 0;
 }
 
+//create context for a thread
 void makeContext(thread_startfunc_t func, void *arg) {
-	//cout << "makeContext" << endl;
 	ucontext_t tempContext;
 	getcontext(&tempContext);
 	tempContext.uc_stack.ss_sp = malloc(STACK_SIZE);
@@ -143,9 +127,9 @@ void makeContext(thread_startfunc_t func, void *arg) {
 	tempContext.uc_link = &schedulerContext;
 	makecontext(&tempContext, (void (*)(void)) func, 1, arg);
 	readyQueue.push_back(&tempContext);
-	//cout << "Child context: " << &tempContext << endl;
 }
 
+//create threads
 int thread_create(thread_startfunc_t func, void *arg){
 	if (lib_init_called == true) {
 		char *stack = new char [STACK_SIZE];
@@ -153,12 +137,8 @@ int thread_create(thread_startfunc_t func, void *arg){
 		initial.uc_stack.ss_size = STACK_SIZE;
 		initial.uc_stack.ss_flags = 0;
 		initial.uc_link = current;
-		//initial.uc_link = &schedulerContext;
 		makecontext(&initial, (void (*)(void)) makeContext, 2, func, arg);
-		//makecontext(&initial, (void (*)(void)) func, 1, arg);
 		swapcontext(current, &initial);
-		//delete [] (char*)stack;
-		//cout << "Child context: " << &initial << endl;
 		return 0;
 	}
 	else {
@@ -166,15 +146,11 @@ int thread_create(thread_startfunc_t func, void *arg){
 	}
 }
 
+//causes thread to yield the CPU to the next runnable thread
 extern int thread_yield(void){
 	if (lib_init_called == true) {
-		//cout << "yield" << endl;
 		readyQueue.push_back(current);
-		//cout << "Added to readyQueue: " << current << endl;
-		//cout << "Current thread: " << current << endl;
-		//cout << "Next thread: " << readyQueue[0] << endl;
 		next = &schedulerContext;
-		//cout << "size of ready queue: " << readyQueue.size() << endl;
 		swapcontext(current, next);
 		return 0;
 	}
@@ -182,38 +158,27 @@ extern int thread_yield(void){
 		return -1;
 	}
 }
+
+//locks a thread with a unique identifier
 extern int thread_lock(unsigned int lock) {
 	if (lib_init_called == true) {
-		//cout << "lock " << lock << endl;
 		//interrupt_disable();
 		ucontext_t temp;
 		while (isLockUsed(lock)) {
-			//cout << "Lock in use" << endl;
 			//getcontext(&tempLock);
 			getcontext(current);
-			//cout << "temp: " << &temp << endl;
 			for (int k = 0; k < lockedQueueContext.size(); k++) {
 				if (current == lockedQueueContext[k]) {
-					//cout << "tempLock: " << &tempLock << " lockedQueueContext[k]: " << lockedQueueContext[k] << endl;
-					//cout << "Thread already called this lock" << endl;
 					return -1;
 				}
 			}
-			//cout << "Hello" << endl;
-			//cout << "temp: " << &temp << endl;
 			readyQueue.push_back(current);
-			//lockedQueue.push_back(current); //add context to blocked queue
-			//lockedQueueId.push_back(lock);
 			next = &schedulerContext;
-			//cout << "size of lock queue: " << lockedQueue.size() << endl;
 			swapcontext(current, next); //switch to different context
 		}
-			//cout << "size of ready queue: " << readyQueue.size() << endl;
 		interrupt_disable();
 		currentLocks.push_back(lock);
-		//getcontext(&tempLock);
 		lockedQueueContext.push_back(current);
-		//cout << "Added this address to lockedQueueContext: " << &tempLock << endl;
 		interrupt_enable();
 		return 0;
 	}
@@ -222,34 +187,26 @@ extern int thread_lock(unsigned int lock) {
 	}
 		
 }
+
+//unlock a thread with a unique identifier
 extern int thread_unlock(unsigned int lock) {
 	if (lib_init_called == true) {
-		//cout << "unlock " << lock << endl;
 		//ucontext_t checkLockOwner;
 		interrupt_disable();
 		if (isLockUsed(lock)) {
-			//cout << "Lock being used" << endl;
 			getcontext(current);
-			//cout << "Address of current context: " << &tempLock << endl;
 			for (int k = 0; k < lockedQueueContext.size(); k++) {
 				if (current == lockedQueueContext[k]) {
-					//cout << "true" << endl;
 					for (int j = 0; j < currentLocks.size(); j++) {
 						if (currentLocks[j] == lock) {
 							currentLocks.erase(currentLocks.begin()+j);
 							lockedQueueContext.erase(lockedQueueContext.begin()+j);
 						}
 					}
-					//cout << "Locked Queue size: " << lockedQueueId.size() << endl;
 					for (int i = 0; i < lockedQueueId.size(); i++) {
-						//cout << "checking locked queue id" << endl;
 						if (lockedQueueId[i] == lock) {
-							//cout << "Size of lockedQueue: " << lockedQueueId.size() << endl;
-							//cout << "Locked queue address: " << lockedQueue[i] << endl;
-							//cout << "size of ready queue: " << readyQueue.size() << endl;
 							next = &schedulerContext;
 							readyQueue.push_back(lockedQueue[i]);
-							//cout << "Added to readyQueue: " << lockedQueue[i] << endl;
 							lockedQueue.erase(lockedQueue.begin()+i);
 							lockedQueueId.erase(lockedQueueId.begin()+i);
 							break;
@@ -260,7 +217,6 @@ extern int thread_unlock(unsigned int lock) {
 		}
 
 		else {
-			//cout << "Trying to unlock an unused lock" << endl;
 			interrupt_enable();
 			return -1;
 		}
@@ -272,9 +228,10 @@ extern int thread_unlock(unsigned int lock) {
 		return -1;
 	}
 }
+
+//puts thread on halt until lock is free
 extern int thread_wait(unsigned int lock, unsigned int cond) {
 	if (lib_init_called == true) {
-		//cout << "Wait" << lock << " " << cond << endl;
 		thread_unlock(lock);
 		ucontext_t waitTemp;
 		getcontext(&waitTemp);
@@ -282,8 +239,6 @@ extern int thread_wait(unsigned int lock, unsigned int cond) {
 		waitQueue.push_back(&waitTemp);
 		waitQueueLock.push_back(lock);
 		waitQueueCond.push_back(cond);
-		//cout << "waitQueue added: " << &waitTemp << endl;
-		//cout << "waitQueue size: " << waitQueue.size() << endl;
 		swapcontext(&waitTemp, next);
 		while (isLockUsed(lock)) {
 			thread_yield();
@@ -295,11 +250,11 @@ extern int thread_wait(unsigned int lock, unsigned int cond) {
 		return -1;
 	}
 }
+
+//sends signal to unlock a lock with the specified identifier
 extern int thread_signal(unsigned int lock, unsigned int cond) {
 	if (lib_init_called == true) {
-		//cout << "Signal" << lock << " " << cond << endl;
 		if (searchWaitQueue(lock, cond) != -1) {
-			//cout << "Signal found lock in waitQueue" << endl;
 			deleteWaitQueue(searchWaitQueue(lock, cond));
 		}
 		return 0;
@@ -308,11 +263,11 @@ extern int thread_signal(unsigned int lock, unsigned int cond) {
 		return -1;
 	}
 }
+
+//unlocks all locks with the speicified identifier
 extern int thread_broadcast(unsigned int lock, unsigned int cond) {
 	if (lib_init_called == true) {
-		//cout << "Broadcast" << lock << " " << cond << endl;
 		while (searchWaitQueue(lock, cond) != -1) {
-			//cout << "Broadcast found lock in waitQueue" << endl;
 			deleteWaitQueue(searchWaitQueue(lock, cond));
 		}
 		return 0;
