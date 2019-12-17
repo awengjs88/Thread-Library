@@ -1,0 +1,10 @@
+# Thread-Library
+Thread Library is a library that implements the functionality of monitors and locks for the purpose of threading applications written in C++. Disk.cc is a concurrent program written in C++ that implements the aforementioned threading library to simulate a disk scheduler in an operating system. In this program, there are X amount of threads. Each thread reads in a text file which contains a number from 0-999 in each line. This number indicates which track in the disk to go to. The disk is initialized at track 0. When the thread reads the text file, a number that has not been serviced is added to a queue of varying size. This queue is not in FIFO order but rather in shortest seek time first (SSTF) order. Example: queue size is 2 elements, thread 1's text file contains the number 100, and thread 2's text file contains the number 50. Thread 1 adds 100 to the queue and is locked (no thread should have more than one number in the queue at a time). Thread 2 adds 50 to the queue and is locked. The queue is now full so the disk checks which track requires the shortest seek time. Since the disk initializes at 0, track 50 is the shortest seek time so thread 2's request is serviced before thread 1. Thread 3 can now add its request to the queue and etc. The process continues until all threads have their requests serviced. 
+
+# Requirements
+Disk.cc requires text files with numbers 0-999 in each line. Disk.cc and thread.cc were both tested in a Linux environment. [Cygwin](https://cygwin.com/install.html) can be used to replicate a Linux environment on Windows. Disk.cc and thread.cc do require a couple other libraries in order to run though I do not have access to those libraries anymore.
+
+# Running Disk.cc
+1. Open terminal and change directory to where disk.cc, thread.cc, and text files are located
+2. Compile the disk scheduler with: "g++ disk.cc thread.cc libinterrupt.a -ldl -o disk"
+3. Run the program with: "disk [queue size] [name of text file 1] [name of text file 2]" up to the number of text files located in the directory
